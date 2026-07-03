@@ -3,9 +3,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as fabric from 'fabric'
 import { Button } from "@/components/ui/button"
+import Link from 'next/link'
 import { Map, Info, Image as ImageIcon, X } from 'lucide-react'
 
-type Project = {
+type Project = { slug: string;
   id: string
   name: string
   description: string
@@ -233,7 +234,9 @@ export default function PublicMapClient({ project, lots }: { project: Project, l
 
               {selectedLot.status === 'available' && (
                  <div className="p-4 border-t border-gray-100 bg-white">
-                    <Button className="w-full h-12 text-lg">Contact Sales</Button>
+                    <Link href={`/lead/${project.slug}?lotId=${selectedLot.id}`}>
+                      <Button className="w-full h-12 text-lg">Contact Sales</Button>
+                    </Link>
                  </div>
               )}
            </div>
