@@ -1,7 +1,7 @@
 import { login, signup } from './actions'
-import { Button } from "@/components/ui/button"
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: { error?: string } }) {
+  const sParams = await searchParams;
   return (
     <div className="flex h-screen w-full items-center justify-center bg-gray-50">
       <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-10 shadow-lg">
@@ -14,6 +14,11 @@ export default function LoginPage() {
           </p>
         </div>
         <form className="mt-8 space-y-6">
+          {sParams.error && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm text-center">
+              Authentication failed. Please check your credentials or try a different email.
+            </div>
+          )}
           <div className="space-y-4 rounded-md shadow-sm">
             <div>
               <label htmlFor="email" className="sr-only">
@@ -44,12 +49,8 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <Button formAction={login} className="w-full">
-              Log in
-            </Button>
-            <Button formAction={signup} variant="outline" className="w-full">
-              Sign up
-            </Button>
+            <button formAction={login} className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Log in</button>
+            <button formAction={signup} className="flex w-full justify-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold leading-6 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Sign up</button>
           </div>
         </form>
       </div>
