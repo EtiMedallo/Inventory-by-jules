@@ -83,7 +83,7 @@ export default async function NewProjectPage() {
         </div>
 
         <div className="pt-4 border-t border-gray-100 flex justify-end">
-          <Button type="submit">Create Project</Button>
+          <button type="submit" className="flex justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">Create Project</button>
         </div>
       </form>
     </div>

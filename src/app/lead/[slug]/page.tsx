@@ -1,6 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import { Button } from "@/components/ui/button"
 
 export default async function PublicLeadFormPage({ params, searchParams }: { params: { slug: string }, searchParams: { lotId?: string; success?: string; error?: string } }) {
   const supabase = await createClient()
@@ -166,9 +165,9 @@ export default async function PublicLeadFormPage({ params, searchParams }: { par
             </div>
 
             <div className="pt-2">
-              <Button type="submit" className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-medium">
+              <button type="submit" className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
                 Request Information
-              </Button>
+              </button>
             </div>
           </form>
         </div>
