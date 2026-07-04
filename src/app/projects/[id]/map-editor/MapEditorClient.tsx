@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as fabric from 'fabric'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from "@/components/ui/button"
-import { MousePointer2, PenTool, Trash2, Save, Upload, Image as ImageIcon } from 'lucide-react'
+import { MousePointer2, PenTool, Trash2, Save, Upload, Image as ImageIcon, FileSpreadsheet, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 type Project = {
   id: string
@@ -303,6 +304,85 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
   }
 
 
+
+  const handleDownloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([
+      { 'numero': 'L-01', 'metro 2': 150.5, 'precio': 120000, 'estado': 'disponible' },
+      { 'numero': 'L-02', 'metro 2': 200.0, 'precio': 150000, 'estado': 'reservado' },
+      { 'numero': 'L-03', 'metro 2': 180.0, 'precio': 140000, 'estado': 'vendido' },
+      { 'numero': 'Z-01', 'metro 2': 500.0, 'precio': 0, 'estado': 'social_zone' }
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+    XLSX.writeFile(wb, "ayp_inventario_template.xlsx");
+  }
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        setIsUploading(true);
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        const newLots = [];
+
+        for (const row of data as Record<string, string | number>[]) {
+          const identifier = row['numero'] || row['Numero'] || row['identifier'];
+          const area = row['metro 2'] || row['Metro 2'] || row['area'] || 0;
+          const price = row['precio'] || row['Precio'] || row['price'] || 0;
+          let rawStatus = (row['estado'] || row['Estado'] || 'disponible').toString().toLowerCase();
+
+          // Normalize status
+          if (rawStatus === 'disponible') rawStatus = 'available';
+          else if (rawStatus === 'reservado') rawStatus = 'reserved';
+          else if (rawStatus === 'vendido') rawStatus = 'sold';
+          else if (rawStatus === 'negociacion') rawStatus = 'negotiation';
+          else if (rawStatus === 'zona social') rawStatus = 'social_zone';
+
+          if (!identifier) continue;
+
+          // Note: polygons will be empty, they will need to be drawn later
+          newLots.push({
+            project_id: project.id,
+            organization_id: project.organization_id,
+            identifier: String(identifier),
+            area_sqm: Number(area),
+            price: Number(price),
+            status: rawStatus,
+            polygon_data: {}
+          });
+        }
+
+        if (newLots.length > 0) {
+          const { data: insertedData, error } = await supabase
+            .from('lots')
+            .upsert(newLots, { onConflict: 'project_id, identifier' })
+            .select();
+
+          if (error) throw error;
+
+          alert(`Successfully imported ${newLots.length} units!`);
+          window.location.reload(); // Reload to fetch and display the new lots cleanly
+        }
+
+      } catch (err) {
+        console.error("Import error:", err);
+        alert("Failed to import Excel file. Please ensure it follows the template format.");
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+  }
+
+
   const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return
     setIsUploading(true)
@@ -414,6 +494,30 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
             )}
           </div>
         </div>
+
+
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="font-semibold text-gray-800 mb-3">Inventory Data</h2>
+          <div className="flex gap-2">
+             <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={handleDownloadTemplate}>
+                <Download className="w-3 h-3 mr-1" /> Template
+             </Button>
+             <div>
+                <input
+                  type="file"
+                  id="excel-upload"
+                  className="hidden"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleImportExcel}
+                  disabled={isUploading}
+                />
+                <Button variant="default" size="sm" className="w-full text-xs" onClick={() => document.getElementById('excel-upload')?.click()} disabled={isUploading}>
+                   <FileSpreadsheet className="w-3 h-3 mr-1" /> Import Excel
+                </Button>
+             </div>
+          </div>
+        </div>
+
 
         <div className="flex-1 overflow-y-auto p-4">
           <h3 className="font-medium text-sm text-gray-500 mb-3 uppercase tracking-wider">Mapped Lots ({lots.length})</h3>
