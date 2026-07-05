@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as fabric from 'fabric'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from "@/components/ui/button"
-import { MousePointer2, PenTool, Trash2, Save, Upload, Image as ImageIcon, FileSpreadsheet, Download } from 'lucide-react'
+import { MousePointer2, PenTool, Trash2, Save, Upload, Image as ImageIcon, FileSpreadsheet, Download, X } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 type Project = {
@@ -199,6 +199,33 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
     })
     canvas.renderAll()
   }, [mode, canvas])
+
+
+
+  useEffect(() => {
+    if (!canvas) return;
+
+    const handleSelection = () => {
+      const activeObj = canvas.getActiveObject();
+      if (activeObj && activeObj.type === 'polygon' && activeObj.get('id')) {
+         const id = activeObj.get('id') as string;
+         const lot = lots.find(l => l.id === id);
+         if (lot) setSelectedLot(lot);
+      } else {
+         setSelectedLot(null);
+      }
+    };
+
+    canvas.on('selection:created', handleSelection);
+    canvas.on('selection:updated', handleSelection);
+    canvas.on('selection:cleared', () => setSelectedLot(null));
+
+    return () => {
+      canvas.off('selection:created', handleSelection);
+      canvas.off('selection:updated', handleSelection);
+      canvas.off('selection:cleared');
+    };
+  }, [canvas, lots]);
 
 
   const finishDrawing = async () => {
@@ -644,37 +671,109 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
         </div>
 
         {selectedLot && (
-           <div className="p-4 border-t border-gray-200 bg-slate-50">
-             <h3 className="font-medium text-sm text-gray-700 mb-2">Media for Unit {selectedLot.identifier}</h3>
-             <input
-                  type="file"
-                  id="media-upload"
-                  className="hidden"
-                  accept="image/*"
-                  disabled={mediaUploading}
-                  onChange={async (e) => {
-                      if (!e.target.files || e.target.files.length === 0) return;
-                      setMediaUploading(true);
-                      const file = e.target.files[0];
-                      const fileExt = file.name.split('.').pop();
-                      const filePath = `${selectedLot.id}/${Math.random()}.${fileExt}`;
-                      try {
-                          const { error: uploadError } = await supabase.storage.from('lot-media').upload(filePath, file);
-                          if (uploadError) throw uploadError;
-                          const { data: { publicUrl } } = supabase.storage.from('lot-media').getPublicUrl(filePath);
-                          await supabase.from('lot_media').insert({ lot_id: selectedLot.id, media_url: publicUrl, media_type: 'image' });
-                          alert("Media uploaded successfully!");
-                      } catch (err) {
-                          console.error(err);
-                          alert("Error uploading media");
-                      } finally {
-                          setMediaUploading(false);
-                      }
+           <div className="p-4 border-t border-gray-200 bg-slate-50 flex flex-col gap-3">
+             <div className="flex justify-between items-center">
+                 <h3 className="font-medium text-sm text-gray-700">Edit Unit {selectedLot.identifier}</h3>
+                 <Button variant="ghost" size="sm" onClick={() => setSelectedLot(null)}><X className="w-4 h-4"/></Button>
+             </div>
+
+             <div className="grid gap-2">
+               <label className="text-xs text-gray-500">Status</label>
+               <select
+                 className="w-full text-sm border p-1.5 rounded bg-white"
+                 value={selectedLot.status}
+                 onChange={async (e) => {
+                    const newStatus = e.target.value;
+                    const { error } = await supabase.from('lots').update({ status: newStatus }).eq('id', selectedLot.id);
+                    if(!error) {
+                       setLots(prev => prev.map(l => l.id === selectedLot.id ? {...l, status: newStatus} : l));
+                       const obj = canvas?.getObjects().find(o => o.get('id') === selectedLot.id);
+                       if(obj) {
+                          obj.set('fill', getStatusColor(newStatus));
+                          canvas?.renderAll();
+                       }
+                    }
+                 }}
+               >
+                 <option value="available">Available</option>
+                 <option value="reserved">Reserved</option>
+                 <option value="sold">Sold</option>
+                 <option value="negotiation">Negotiation</option>
+               </select>
+
+               <label className="text-xs text-gray-500 mt-1">Price</label>
+               <input
+                  type="number"
+                  className="w-full text-sm border p-1.5 rounded"
+                  defaultValue={(selectedLot as unknown as Record<string, string|number|null>).price || ''}
+                  onBlur={async (e) => {
+                     const val = parseFloat(e.target.value);
+                     if(!isNaN(val)) {
+                         await supabase.from('lots').update({ price: val }).eq('id', selectedLot.id);
+                         setLots(prev => prev.map(l => l.id === selectedLot.id ? {...l, price: val} : l));
+                     }
                   }}
-             />
-             <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => document.getElementById('media-upload')?.click()} disabled={mediaUploading}>
-                 {mediaUploading ? 'Uploading...' : 'Upload Media'}
-             </Button>
+               />
+
+               <label className="text-xs text-gray-500 mt-1">Area (m²)</label>
+               <input
+                  type="number"
+                  className="w-full text-sm border p-1.5 rounded"
+                  defaultValue={(selectedLot as unknown as Record<string, string|number|null>).area_sqm || ''}
+                  onBlur={async (e) => {
+                     const val = parseFloat(e.target.value);
+                     if(!isNaN(val)) {
+                         await supabase.from('lots').update({ area_sqm: val }).eq('id', selectedLot.id);
+                         setLots(prev => prev.map(l => l.id === selectedLot.id ? {...l, area_sqm: val} : l));
+                     }
+                  }}
+               />
+
+               <label className="text-xs text-gray-500 mt-1">Description</label>
+               <textarea
+                  className="w-full text-sm border p-1.5 rounded"
+                  rows={2}
+                  defaultValue={(selectedLot as unknown as Record<string, string|number|null>).description || ''}
+                  onBlur={async (e) => {
+                     const val = e.target.value;
+                     await supabase.from('lots').update({ description: val }).eq('id', selectedLot.id);
+                     setLots(prev => prev.map(l => l.id === selectedLot.id ? {...l, description: val} : l));
+                  }}
+               />
+             </div>
+
+             <div className="mt-2 pt-2 border-t border-gray-200">
+                 <h4 className="font-medium text-xs text-gray-700 mb-2">Media</h4>
+                 <input
+                      type="file"
+                      id="media-upload"
+                      className="hidden"
+                      accept="image/*"
+                      disabled={mediaUploading}
+                      onChange={async (e) => {
+                          if (!e.target.files || e.target.files.length === 0) return;
+                          setMediaUploading(true);
+                          const file = e.target.files[0];
+                          const fileExt = file.name.split('.').pop();
+                          const filePath = `${selectedLot.id}/${Math.random()}.${fileExt}`;
+                          try {
+                              const { error: uploadError } = await supabase.storage.from('lot-media').upload(filePath, file);
+                              if (uploadError) throw uploadError;
+                              const { data: { publicUrl } } = supabase.storage.from('lot-media').getPublicUrl(filePath);
+                              await supabase.from('lot_media').insert({ lot_id: selectedLot.id, media_url: publicUrl, media_type: 'image' });
+                              alert("Media uploaded successfully!");
+                          } catch (err) {
+                              console.error(err);
+                              alert("Error uploading media");
+                          } finally {
+                              setMediaUploading(false);
+                          }
+                      }}
+                 />
+                 <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => document.getElementById('media-upload')?.click()} disabled={mediaUploading}>
+                     {mediaUploading ? 'Uploading...' : 'Upload Media'}
+                 </Button>
+             </div>
            </div>
         )}
       </div>

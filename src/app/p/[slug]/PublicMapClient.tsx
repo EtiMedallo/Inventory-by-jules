@@ -95,8 +95,8 @@ export default function PublicMapClient({ project, lots }: { project: Project, l
           );
 
           img.set({
-            scaleX: scale * 0.95,
-            scaleY: scale * 0.95,
+            scaleX: scale * 0.9,
+            scaleY: scale * 0.9,
             left: (canvas.width || 800) / 2,
             top: (canvas.height || 600) / 2,
             originX: 'center',
