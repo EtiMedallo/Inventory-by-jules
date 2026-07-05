@@ -11,7 +11,7 @@ export default async function PublicProjectPage({ params }: { params: { slug: st
   // Fetch project details
   const { data: project } = await supabase
     .from('projects')
-    .select('*, organizations(name)')
+    .select('*, organizations(name), organization_id')
     .eq('slug', slug)
     .eq('is_public', true)
     .single()

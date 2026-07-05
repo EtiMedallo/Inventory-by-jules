@@ -1,7 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, Home, Building2, User } from 'lucide-react'
+import { LogOut, Home, Building2, User, Users, CalendarCheck, Filter } from 'lucide-react'
 
 export default async function DashboardLayout({
   children,
@@ -27,11 +27,31 @@ export default async function DashboardLayout({
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-2">
-          <Link href="/projects" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg bg-indigo-50 text-indigo-700">
-            <Building2 className="w-5 h-5 mr-3" />
+
+          <Link href="/projects" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-100">
+            <Building2 className="w-5 h-5 mr-3 text-gray-400" />
             Projects
           </Link>
+          <Link href="/leads" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-100">
+            <Users className="w-5 h-5 mr-3 text-gray-400" />
+            Pipeline (CRM)
+          </Link>
+          <Link href="/agenda" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-100">
+            <CalendarCheck className="w-5 h-5 mr-3 text-gray-400" />
+            My Agenda
+          </Link>
+
           {/* Future nav items can go here */}
+
+          <Link href="/settings/members" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-100">
+            <Users className="w-5 h-5 mr-3 text-gray-400" />
+            Team Members
+          </Link>
+          <Link href="/settings/pipeline" className="flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-100">
+            <Filter className="w-5 h-5 mr-3 text-gray-400" />
+            Pipeline Settings
+          </Link>
+
         </nav>
 
         <div className="p-4 border-t border-gray-200">

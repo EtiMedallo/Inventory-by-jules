@@ -30,6 +30,10 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
   const [mode, setMode] = useState<EditorMode>('select')
   const [lots, setLots] = useState<Lot[]>(initialLots)
   const [isUploading, setIsUploading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'all' | 'mapped' | 'unmapped'>('all')
+  const [linkingLotId, setLinkingLotId] = useState<string | null>(null)
+  const [mediaUploading, setMediaUploading] = useState(false)
+  const [selectedLot, setSelectedLot] = useState<Lot | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const supabase = createClient()
 
@@ -52,6 +56,55 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
     })
 
     setCanvas(c)
+
+    // Zoom and Pan
+    c.on('mouse:wheel', function(opt) {
+      const delta = opt.e.deltaY;
+      let zoom = c.getZoom();
+      zoom *= 0.999 ** delta;
+      if (zoom > 20) zoom = 20;
+      if (zoom < 0.1) zoom = 0.1;
+      c.zoomToPoint(new fabric.Point(opt.e.offsetX, opt.e.offsetY), zoom);
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+    });
+
+    let isDragging = false;
+    let lastPosX = 0;
+    let lastPosY = 0;
+
+    c.on('mouse:down', function(opt) {
+      if (opt.e.altKey || mode === 'select') {
+         // Allow dragging only if alt key is pressed OR if in select mode and clicking on empty space
+         if (opt.e.altKey || !opt.target) {
+             isDragging = true;
+             c.selection = false;
+             lastPosX = (opt.e as MouseEvent).clientX;
+             lastPosY = (opt.e as MouseEvent).clientY;
+         }
+      }
+    });
+
+    c.on('mouse:move', function(opt) {
+      if (isDragging) {
+        const e = opt.e;
+        const vpt = c.viewportTransform;
+        if(vpt) {
+            vpt[4] += (e as MouseEvent).clientX - lastPosX;
+            vpt[5] += (e as MouseEvent).clientY - lastPosY;
+        }
+        c.requestRenderAll();
+        lastPosX = (e as MouseEvent).clientX;
+        lastPosY = (e as MouseEvent).clientY;
+      }
+    });
+
+    c.on('mouse:up', function(opt) {
+      c.setViewportTransform(c.viewportTransform!);
+      isDragging = false;
+      c.selection = mode === 'select';
+    });
+
 
     const handleResize = () => {
       if (wrapperRef.current && c) {
@@ -160,13 +213,21 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
         if (obj.type === 'circle') canvas.remove(obj)
      })
 
-     const identifier = prompt("Enter Lot/Unit Identifier (e.g. L-01):")
-     if (!identifier) {
-        setPoints([])
-        setActiveShape(null)
-        setActiveLine(null)
-        canvas.renderAll()
-        return
+     let identifier = "";
+     let targetLotId = null;
+     if (linkingLotId) {
+         const target = lots.find(l => l.id === linkingLotId);
+         identifier = target?.identifier || "";
+         targetLotId = linkingLotId;
+     } else {
+         identifier = prompt("Enter Lot/Unit Identifier (e.g. L-01):") || "";
+         if (!identifier) {
+            setPoints([])
+            setActiveShape(null)
+            setActiveLine(null)
+            canvas.renderAll()
+            return
+         }
      }
 
      const finalPoly = new fabric.Polygon([...points], {
@@ -183,19 +244,33 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
 
      // Save to database
      try {
-        const { data, error } = await supabase.from('lots').insert({
-           project_id: project.id,
-           organization_id: project.organization_id,
-           identifier: identifier,
-           status: 'available',
-           polygon_data: { points: points }
-        }).select().single()
+        let data, error;
+        if (targetLotId) {
+            // Update existing unmapped lot
+            const res = await supabase.from('lots')
+               .update({ polygon_data: { points: points } })
+               .eq('id', targetLotId)
+               .select().single();
+            data = res.data; error = res.error;
+            setLinkingLotId(null);
+            setMode('select');
+        } else {
+            // Insert new lot
+            const res = await supabase.from('lots').insert({
+               project_id: project.id,
+               organization_id: project.organization_id,
+               identifier: identifier,
+               status: 'available',
+               polygon_data: { points: points }
+            }).select().single();
+            data = res.data; error = res.error;
+        }
 
         if (error) throw error
 
         finalPoly.set('id', data.id)
         finalPoly.set('identifier', data.identifier)
-        setLots([...lots, data])
+        setLots(prev => { const idx = prev.findIndex(l => l.id === data.id); if (idx > -1) { const newArr = [...prev]; newArr[idx] = data; return newArr; } else { return [...prev, data] } })
 
      } catch (err) {
         console.error("Error saving lot:", err)
@@ -519,33 +594,89 @@ export default function MapEditorClient({ project, initialLots }: { project: Pro
         </div>
 
 
-        <div className="flex-1 overflow-y-auto p-4">
-          <h3 className="font-medium text-sm text-gray-500 mb-3 uppercase tracking-wider">Mapped Lots ({lots.length})</h3>
-          <div className="space-y-2">
-            {lots.map(lot => (
-              <div key={lot.id} className="p-3 border border-gray-100 rounded-lg flex items-center justify-between hover:bg-gray-50 cursor-pointer"
+
+        <div className="flex-1 overflow-y-auto flex flex-col">
+          <div className="flex border-b border-gray-200">
+            <button className={`flex-1 py-2 text-xs font-medium ${activeTab === 'all' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('all')}>All ({lots.length})</button>
+            <button className={`flex-1 py-2 text-xs font-medium ${activeTab === 'mapped' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('mapped')}>Mapped ({lots.filter(l => l.polygon_data && l.polygon_data.points).length})</button>
+            <button className={`flex-1 py-2 text-xs font-medium ${activeTab === 'unmapped' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`} onClick={() => setActiveTab('unmapped')}>Unmapped ({lots.filter(l => !l.polygon_data || !l.polygon_data.points).length})</button>
+          </div>
+
+          <div className="p-4 space-y-2 overflow-y-auto">
+            {lots
+              .filter(l => {
+                 if (activeTab === 'all') return true;
+                 if (activeTab === 'mapped') return l.polygon_data && l.polygon_data.points;
+                 if (activeTab === 'unmapped') return !l.polygon_data || !l.polygon_data.points;
+                 return true;
+              })
+              .map(lot => (
+              <div key={lot.id} className={`p-3 border rounded-lg flex items-center justify-between hover:bg-gray-50 ${linkingLotId === lot.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100'}`}
                 onClick={() => {
                    if(canvas) {
                       const obj = canvas.getObjects().find(o => o.get('id') === lot.id);
                       if (obj) {
                          canvas.setActiveObject(obj);
-                         canvas.renderAll();
+                         canvas.requestRenderAll();
                       }
                    }
                 }}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(lot.status) }} />
-                  <span className="font-medium text-gray-700">{lot.identifier}</span>
+                  <div>
+                     <span className="font-medium text-gray-700 block">{lot.identifier}</span>
+                     {(!lot.polygon_data || !lot.polygon_data.points) && (
+                         <span className="text-[10px] text-red-500">Needs polygon</span>
+                     )}
+                  </div>
                 </div>
-                <span className="text-xs text-gray-500 capitalize">{lot.status.replace('_', ' ')}</span>
+                {(!lot.polygon_data || !lot.polygon_data.points) && (
+                    <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={(e) => {
+                       e.stopPropagation();
+                       setLinkingLotId(lot.id);
+                       setMode('draw');
+                    }}>Draw</Button>
+                )}
               </div>
             ))}
-            {lots.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">No lots mapped yet. Select the draw tool to create one.</p>
-            )}
           </div>
         </div>
+
+        {selectedLot && (
+           <div className="p-4 border-t border-gray-200 bg-slate-50">
+             <h3 className="font-medium text-sm text-gray-700 mb-2">Media for Unit {selectedLot.identifier}</h3>
+             <input
+                  type="file"
+                  id="media-upload"
+                  className="hidden"
+                  accept="image/*"
+                  disabled={mediaUploading}
+                  onChange={async (e) => {
+                      if (!e.target.files || e.target.files.length === 0) return;
+                      setMediaUploading(true);
+                      const file = e.target.files[0];
+                      const fileExt = file.name.split('.').pop();
+                      const filePath = `${selectedLot.id}/${Math.random()}.${fileExt}`;
+                      try {
+                          const { error: uploadError } = await supabase.storage.from('lot-media').upload(filePath, file);
+                          if (uploadError) throw uploadError;
+                          const { data: { publicUrl } } = supabase.storage.from('lot-media').getPublicUrl(filePath);
+                          await supabase.from('lot_media').insert({ lot_id: selectedLot.id, media_url: publicUrl, media_type: 'image' });
+                          alert("Media uploaded successfully!");
+                      } catch (err) {
+                          console.error(err);
+                          alert("Error uploading media");
+                      } finally {
+                          setMediaUploading(false);
+                      }
+                  }}
+             />
+             <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => document.getElementById('media-upload')?.click()} disabled={mediaUploading}>
+                 {mediaUploading ? 'Uploading...' : 'Upload Media'}
+             </Button>
+           </div>
+        )}
       </div>
     </div>
   )
