@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as fabric from 'fabric'
 import { Button } from "@/components/ui/button"
 import Link from 'next/link'
-import { Map, Info, Image as ImageIcon, X } from 'lucide-react'
+import { Map, Info, Image as ImageIcon, X, Heart, MessageCircle } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
 
 type Project = { slug: string;
   id: string
@@ -12,6 +13,12 @@ type Project = { slug: string;
   description: string
   floor_plan_url: string | null
   organizations: { name: string }
+  organization_id: string
+  show_prices: boolean
+  show_sold_prices: boolean
+  show_sqm: boolean
+  whatsapp_number: string | null
+  enable_public_quotes: boolean
 }
 
 type LotMedia = {
@@ -88,8 +95,8 @@ export default function PublicMapClient({ project, lots }: { project: Project, l
           );
 
           img.set({
-            scaleX: scale * 0.95,
-            scaleY: scale * 0.95,
+            scaleX: scale * 0.9,
+            scaleY: scale * 0.9,
             left: (canvas.width || 800) / 2,
             top: (canvas.height || 600) / 2,
             originX: 'center',
@@ -149,7 +156,9 @@ export default function PublicMapClient({ project, lots }: { project: Project, l
   return (
     <>
       {/* Sidebar / Project Info */}
-      <div className={`bg-white shadow-xl transition-all duration-300 flex flex-col z-10 ${selectedLot ? 'w-96' : 'w-80'}`}>
+      <div className={`bg-white shadow-2xl transition-all duration-300 flex flex-col z-20
+      fixed md:relative bottom-0 w-full md:w-auto h-[50vh] md:h-full rounded-t-3xl md:rounded-none
+      ${selectedLot ? 'md:w-96 translate-y-0' : 'md:w-80 translate-y-full md:translate-y-0'}`}>
         {!selectedLot ? (
            <div className="p-6 h-full flex flex-col">
               <div className="mb-8">
@@ -232,13 +241,42 @@ export default function PublicMapClient({ project, lots }: { project: Project, l
                  )}
               </div>
 
-              {selectedLot.status === 'available' && (
-                 <div className="p-4 border-t border-gray-100 bg-white">
-                    <Link href={`/lead/${project.slug}?lotId=${selectedLot.id}`}>
-                      <Button className="w-full h-12 text-lg">Contact Sales</Button>
+
+                 <div className="p-4 border-t border-gray-100 bg-white grid grid-cols-2 gap-3">
+                    <Link href={`/lead/${project.slug}?lotId=${selectedLot.id}`} className="col-span-2">
+                      <button className="flex justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 w-full h-12 items-center text-lg">Contact Sales</button>
                     </Link>
+                    <button className="flex justify-center rounded-md bg-white px-3 py-1.5 text-sm font-semibold leading-6 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 w-full" onClick={async () => {
+                        const supabase = createClient();
+                        await supabase.from('leads').insert({
+                            project_id: project.id,
+                            organization_id: project.organization_id,
+                            first_name: 'Anonymous',
+                            source: 'public_map_like'
+                        }).select().single().then(async ({ data }) => {
+                            if(data) {
+                                await supabase.from('lead_activities').insert({
+                                    organization_id: project.organization_id,
+                                    lead_id: data.id,
+                                    activity_type: 'like',
+                                    description: `Anonymous liked unit ${selectedLot.identifier}`,
+                                    metadata: { lot_id: selectedLot.id, lot_identifier: selectedLot.identifier }
+                                });
+                                alert("Thanks for your interest! We registered your like.");
+                            }
+                        });
+                    }}>
+                       <Heart className="w-4 h-4 mr-2" /> Like
+                    </button>
+                    {project.whatsapp_number && (
+                        <a href={`https://wa.me/${project.whatsapp_number}?text=Hi, I am interested in unit ${selectedLot.identifier} in ${project.name}`} target="_blank" rel="noreferrer">
+                            <button className="flex justify-center rounded-md bg-green-50 px-3 py-1.5 text-sm font-semibold leading-6 text-green-700 shadow-sm ring-1 ring-inset ring-green-300 hover:bg-green-100 w-full items-center">
+                               <MessageCircle className="w-4 h-4 mr-2" /> WhatsApp
+                            </button>
+                        </a>
+                    )}
                  </div>
-              )}
+
            </div>
         )}
       </div>

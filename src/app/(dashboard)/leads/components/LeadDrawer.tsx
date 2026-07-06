@@ -5,6 +5,8 @@ import { createClient } from '@/utils/supabase/client'
 import { Button } from "@/components/ui/button"
 import { X, Mail, Phone, Calendar, Clock, MapPin, Activity } from 'lucide-react'
 import { format } from 'date-fns'
+import PaymentSimulator from '@/components/custom/PaymentSimulator'
+import { generateQuotePDF } from '@/utils/pdf'
 
 type LeadDrawerProps = {
   leadId: string | null
@@ -13,8 +15,10 @@ type LeadDrawerProps = {
 }
 
 export default function LeadDrawer({ leadId, isOpen, onClose }: LeadDrawerProps) {
-  const [lead, setLead] = useState<{first_name: string, last_name: string, temperature: string, email: string, phone: string, source: string, created_at: string, projects?: {name: string}, pipeline_stages?: {name: string}} | null>(null)
+  const [lead, setLead] = useState<any>(null)
   const [activities, setActivities] = useState<{id: string, activity_type: string, description: string, created_at: string, metadata?: { lot_identifier?: string }}[]>([])
+  const [discountRules, setDiscountRules] = useState<any[]>([])
+  const [showSimulator, setShowSimulator] = useState(false)
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
@@ -39,6 +43,9 @@ export default function LeadDrawer({ leadId, isOpen, onClose }: LeadDrawerProps)
         .order('created_at', { ascending: false })
 
       setActivities(acts || [])
+
+      const { data: rules } = await supabase.from('discount_rules').select('*').eq('project_id', leadData.project_id)
+      setDiscountRules(rules || [])
       setLoading(false)
     }
 
@@ -120,7 +127,16 @@ export default function LeadDrawer({ leadId, isOpen, onClose }: LeadDrawerProps)
                 </div>
               </div>
 
+
+              {showSimulator && lead.projects && (
+                 <div className="p-6 bg-gray-50 border-b border-gray-100">
+                    <h3 className="text-sm font-bold text-gray-900 mb-3">Quotation Simulator</h3>
+                    <p className="text-xs text-gray-500 mb-4">Select a base price to simulate. In a real scenario, the commercial would select a lot and it would pull the price.</p>
+                    <PaymentSimulator basePrice={150000} discountRules={discountRules} />
+                 </div>
+              )}
               {/* Timeline */}
+
               <div className="p-6">
                 <div className="flex items-center mb-6">
                   <Activity className="w-5 h-5 text-gray-400 mr-2" />
@@ -183,7 +199,47 @@ export default function LeadDrawer({ leadId, isOpen, onClose }: LeadDrawerProps)
 
             {/* Footer actions */}
             <div className="p-4 border-t border-gray-100 bg-gray-50/80 flex gap-3">
-              <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700">Create Quote</Button>
+              <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={async () => {
+                 // Demo Quote Generation
+                 if (!lead.projects) {
+                    alert('Lead has no associated project.');
+                    return;
+                 }
+                 const { data: lots } = await supabase.from('lots').select('*').eq('project_id', lead.projects.id).limit(1);
+                 if (!lots || lots.length === 0) {
+                    alert('No lots available in this project to quote.');
+                    return;
+                 }
+                 const demoLot = lots[0];
+                 const code = 'QT-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+
+                 const quoteData = {
+                    organization_id: lead.organization_id,
+                    project_id: lead.project_id,
+                    lot_id: demoLot.id,
+                    lead_id: lead.id,
+                    human_readable_code: code,
+                    base_price: demoLot.price || 100000,
+                    final_price: demoLot.price || 100000,
+                    down_payment_percent: 30,
+                    down_payment_amount: (demoLot.price || 100000) * 0.3,
+                    financed_amount: (demoLot.price || 100000) * 0.7,
+                    term_months: 24,
+                    monthly_installment: ((demoLot.price || 100000) * 0.7) / 24,
+                    valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                 };
+
+                 const { data, error } = await supabase.from('quotations').insert(quoteData).select().single();
+
+                 if (!error && data) {
+                    generateQuotePDF(data, lead.projects, demoLot);
+                 } else {
+                    alert('Failed to generate quote. Check console.');
+                    console.error(error);
+                 }
+
+              }}>Generate PDF Quote</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowSimulator(!showSimulator)}>Simulator</Button>
               <Button variant="outline" className="flex-1">Add Note</Button>
             </div>
           </>

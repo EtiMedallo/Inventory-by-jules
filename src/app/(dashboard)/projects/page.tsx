@@ -1,7 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import Link from 'next/link'
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Map, Eye } from 'lucide-react'
+import { PlusCircle, Map, Eye, Settings } from 'lucide-react'
 
 export default async function ProjectsPage() {
   const supabase = await createClient()
@@ -80,6 +80,11 @@ export default async function ProjectsPage() {
                         </Button>
                       </Link>
                     )}
+                    <Link href={`/projects/${project.id}/settings`}>
+                      <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </Link>
                     <Link href={`/projects/${project.id}/map-editor`}>
                       <Button variant="secondary" size="sm">
                         <Map className="h-4 w-4 mr-2" />
